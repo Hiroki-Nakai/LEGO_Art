@@ -4,6 +4,19 @@
     <meta charset="utf-8">
     <title>{{title}}</title>
     <style type="text/css">
+         table,
+        td {
+            text-align:left;
+            border: 1px solid #333;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        thead,
+        tfoot {
+            background-color: #333;
+            color: #fff;
+        }
         body {
             background-color: #FFDB46;
             text-align:center;
@@ -59,6 +72,13 @@
             </div>
             <details> <summary><strong>詳細設定</strong></summary>
             {{setting_form.as_p}}
+            <table>
+                <tbody>
+            {% for i in colors %}
+            <tr><td bgcolor="{{i.1}}"><label style="color:{{i.2}}"><input checked="checked" type="checkbox" id="colors" name="colors" label="{{i.0}}" value="{{ i.0 }}">{{i.0}}</label></td></tr>
+            {% endfor %}
+        </tbody>
+            </table>
             </details>
             
         </form>

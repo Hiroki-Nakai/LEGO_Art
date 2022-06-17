@@ -11,20 +11,61 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 import numpy as np
-import cv2
 import matplotlib.pyplot as plt
 from IPython.display import display_pdf
+from scipy.stats import rankdata
+import scipy
+import os
+def _convolve2d(image, kernel):
+    shape = (image.shape[0] - kernel.shape[0] + 1, image.shape[1] - kernel.shape[1] + 1) + kernel.shape
+    strides = image.strides * 2
+    strided_image = np.lib.stride_tricks.as_strided(image, shape, strides)
+    return np.einsum('kl,ijkl->ij', kernel, strided_image)
+def _convolve2d_multichannel(image, kernel):
+    convolved_image = np.empty((image.shape[0] - kernel.shape[0] + 1, image.shape[1] - kernel.shape[1] + 1, image.shape[2]))
+    for i in range(image.shape[2]):
+        convolved_image[:,:,i] = _convolve2d(image[:,:,i], kernel)
+    return convolved_image
+def _pad_singlechannel_image(image, kernel_shape, boundary):
+    return np.pad(image, ((int(kernel_shape[0] / 2),), (int(kernel_shape[1] / 2),)), boundary)
+def convolve2d(image, kernel, boundary='edge'):
+    if image.ndim == 2:
+        pad_image = _pad_singlechannel_image(image, kernel.shape, boundary) if boundary is not None else image
+        return _convolve2d(pad_image, kernel)
+def create_averaging_kernel(size = (3, 3)):
+    return np.full(size, 1 / (size[0] * size[1]))
+def median1d(arr, k=3):
+    w = len(arr)
+    idx = np.fromfunction(lambda i, j: i + j, (k, w), dtype=np.int) - k // 2
+    idx[idx < 0] = 0
+    idx[idx > w - 1] = w - 1
+    result=np.median(arr[idx], axis=0)
+    result = result.astype(int)
+    return result
+def median2d(arr):
+    result=scipy.signal.medfilt2d(arr, kernel_size=3)
+    #result = result.astype(int)
+    return result
 """
 深度マップを、指定した高さに量子化する関数(depth:深度マップ、ブロックの最大の高さn)
 """
 def posterization(depth, n):
+    #print(depth)
     depth = 255-depth
     th_bin, depth_bin = cv2.threshold(depth,0,255,cv2.THRESH_OTSU)
-    ran = th_bin/n
+    ran2 = th_bin
     out = np.ones_like(depth)
+    out = np.array(out.flatten())
+    depth_onedim=depth.flatten()
+    rank=np.array(rankdata(depth_onedim))#手前順ランキング
+    back=depth_onedim[ran2<depth_onedim].shape[0]#背景の画素数
+    ran1 = (depth.shape[0]*depth.shape[1]-back)/(n-1)
     for i in range(n-1):
-        #out = np.where( (i*ran < img)&(img<=(i+1)*ran), (i+1)*(255//n), out )
-        out = np.where( (i*ran<=depth)&(depth<(i+1)*ran), n-i, out )
+        out=np.where((i*ran1<=rank)&(rank<(i+1)*ran1),n-i,out)
+    out=np.reshape(out,(depth.shape[0],depth.shape[1]))
+    averaging_kernel_3x3 = create_averaging_kernel(size=(3, 3))
+    out = convolve2d(out, averaging_kernel_3x3)
+    out=out.astype(int)#ここコメントアウトしたら滑らかになる（少数を許す）
     return out
 
 """使用するブロックの色を表示する関数(color_dic={"color_name":[R,G,B]})"""
@@ -114,10 +155,10 @@ def creat_instruction(color_map, depth_map, min_color_num, COLOR_DIC,image_id):
     # フォント登録
     pdfmetrics.registerFont(UnicodeCIDFont('HeiseiKakuGo-W5'))
     #完成図の挿入
-    image_path = './media/lego_img/'+str(image_id)+'.png'
-    cv2.imwrite(image_path, color_map)
+    image_path_full = './media/lego_img/'+str(image_id)+'.png'
+    cv2.imwrite(image_path_full, color_map)
     sample_im_height = (Height*190/Width)
-    cv.drawImage(image=image_path, x=10*mm, y=(150-sample_im_height/2)*mm, width=190*mm, height=sample_im_height*mm, mask='auto')
+    cv.drawImage(image=image_path_full, x=10*mm, y=(150-sample_im_height/2)*mm, width=190*mm, height=sample_im_height*mm, mask='auto')
     #改ページ
     cv.showPage()
     
@@ -205,7 +246,8 @@ def creat_instruction(color_map, depth_map, min_color_num, COLOR_DIC,image_id):
             sample_image = cv2.copyMakeBorder(sample_image, 1, 1, 1, 1, cv2.BORDER_CONSTANT, (0,0,0))
             sample_image[table_len*h+1:table_len*h+table_len_y+1, table_len*w+1:table_len*w+table_len_x+1] = color_map[table_len*h:table_len*h+table_len_y, table_len*w:table_len*w+table_len_x]
             cv2.imwrite(image_path, sample_image)
-            cv.drawImage(image=image_path, x=15*mm, y=240*mm, width=(Width*50/Height)*mm, height=50*mm, mask='auto')
+            cv.drawImage(image=image_path, x=15*mm, y=240*mm, width=(min((Width*50/Height),88))*mm, height=50*mm, mask='auto')
+            cv.drawImage(image=image_path_full, x=107*mm, y=240*mm, width=(min((Width*50/Height),88))*mm, height=50*mm, mask='auto')
             #改ページ
             cv.showPage()
             """
@@ -214,6 +256,13 @@ def creat_instruction(color_map, depth_map, min_color_num, COLOR_DIC,image_id):
             """
     # 保存
     cv.save()
+    for h in range(Height_num+1):
+        for w in range(Width_num+1):
+            image_path = f'./media/pdf/pdf_image/{image_id}_{h}_{w}.png'
+            try:
+                os.remove(image_path)
+            except:
+                continue
 """
 元画像（RGB画像および深度マップを入力）
 LEGOARTの幅resize_wを指定
@@ -237,7 +286,7 @@ def main(img_rgb, img_depth, resize_w, block_h, color_dic,image_id):
     """LEGOブロックの色のみの画像、指定した高さの深度マップ、rgb_depth情報を含んだnumpy配列"""
     return LEGO_rgb, depth_post, rgb_depth_array
 def color_select(color_list):
-    COLOR_DIC = {'0 White': [242, 243, 242], '1 Tan': [111, 160, 176], '2 Light Green': [168, 217, 173], '3 Maersk Blue': [195, 146, 53], '4 Pink': [255, 217, 171],
+    COLOR_DIC = {'0 White': [242, 243, 242], '1 Tan': [111, 160, 176], '2 Light Green': [168, 217, 173], '3 Maersk Blue': [195, 146, 53], '4 Pink': [172, 151,252 ],
              '5 Nougat': [104, 145, 208], '6 Red': [9, 26, 201], '7 Blue': [191, 85, 0], '8 Yellow': [55, 205, 242], '9 Black': [29, 19, 5],
              '10 Green': [65, 120, 35], '11 Md,Green': [117, 196, 127], '12 Bt,Green': [65, 171, 88], '13 Dark Orange': [0, 85, 169],
              '14 Light Violet': [226, 202, 201], '15 Md,Blue': [219, 147, 90], '16 Md,Orange': [11, 167, 255], '17 Orange': [24, 138, 254],
