@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <style type="text/css">
+        img{
+        margin-bottom: 7%;
+      }
+        body {background-color: #FFDB46; text-align:center;}
+        p {font-size: 20px; color: red;}
+        div.images{
+            {% comment %} text-align:center;
+            width: 90%;
+            background-color: #FFFFFF;
+            display: flex;
+            margin:auto;
+            justify-content: center; /*左右中央揃え*/
+            align-items: center;     /*上下中央揃え*/ {% endcomment %}
+            background-image: url(/media/picture/LEGObackblock1.png);
+            background-repeat: no-repeat;
+            background-size: 100% 300%;
+        }
+        input.btn--yellow {
+            color: #000;
+            background-color: #d01012;
+            border-bottom: 5px solid #8c1012;
+            width: 50%;
+            font-size: 200%;
+            min-width: 200px;
+            max-width: 600px;
+            -webkit-text-stroke: 1.5px black;
+            {% comment %} margin-top: 20%; {% endcomment %}
+            {% comment %} margin-bottom: 10%; {% endcomment %}
+          }
+          
+          input.btn--yellow:hover {
+            margin-top: 3px;
+            color: #000;
+            background: #d01012;
+            border-bottom: 2px solid #8c1012;
+            {% comment %} margin-top: 20%; {% endcomment %}
+            {% comment %} margin-bottom: 10%; {% endcomment %}
+          }
+          p.imageup{
+            {% comment %} padding : 5%; {% endcomment %}
+          }
+    </style>
+    <title>{{title}}</title>
+</head>
+<body >
+    <div>
+        <img src="/media/picture/LEGO2Dver4.png" width="50%">
+    </div>
+
+    <div class = "images">
+        <h2>　</h2> 
+        <form action="{% url 'index' %}" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <p class = "imageup">
+                {{ upload_form.as_p }}
+            </p>
+            <p>
+                <input type="submit" class="btn btn--yellow btn--cubic" style="color:white" value="アップロード" >
+            </p>
+        </form>
+    </div>
+</body>
+</html>
